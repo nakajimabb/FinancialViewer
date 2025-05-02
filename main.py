@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import re
 import pandas as pd
 from PySide6.QtCore import Qt, QAbstractTableModel
 from PySide6.QtGui import QFont
@@ -16,6 +17,17 @@ def safe_int(s):
         return int(s)
     except (ValueError, TypeError):
         return 0
+
+def is_int(s):
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return False
+
+def natural_key(s):
+    return [int(text) if text.isdigit() else text.lower()
+            for text in re.split(r'(\d+)', s)]
 
 class DataFrameModel(QAbstractTableModel):
     def __init__(self, df):
@@ -48,7 +60,7 @@ class CSVExplorer(QWidget):
         super().__init__()
 
         self.setWindowTitle("CSV ファイル一覧表示")
-        self.resize(800, 600)
+        self.resize(960, 800)
 
         # フォルダ選択
         hbox1 = QHBoxLayout()
@@ -65,7 +77,7 @@ class CSVExplorer(QWidget):
         hbox2 = QHBoxLayout()
         self.list_widget = QListWidget()
         self.list_widget.setSelectionMode(QAbstractItemView.MultiSelection)
-        self.list_widget.setFixedWidth(240)  
+        self.list_widget.setFixedWidth(360)  
         self.font = QFont()
         self.font.setPointSize(8)
         table_view = QTableView()
@@ -192,7 +204,8 @@ class CSVExplorer(QWidget):
             json.dump(config, f, indent=2, ensure_ascii=False)
             
     def select_directory(self):
-        dir_path = QFileDialog.getExistingDirectory(self, "ディレクトリを選択")
+        initial_dir = self.config["current_dir"] or ""
+        dir_path = QFileDialog.getExistingDirectory(self, "ディレクトリを選択", initial_dir)
 
         if dir_path:
             self.change_directory(dir_path)
@@ -216,6 +229,8 @@ class CSVExplorer(QWidget):
         elif ext in [".xls", ".xlsx"]:
             excel_config = self.config.get("excel_config") or {}
             sheet_name = excel_config.get("sheet_name") or 0
+            if is_int(sheet_name):
+                sheet_name = int(sheet_name)
             header = excel_config.get("header") or 0
             return pd.read_excel(file_path, sheet_name=sheet_name, header=header)
         else:
@@ -230,17 +245,27 @@ class CSVExplorer(QWidget):
             self.list_widget.addItem(file_path)
         self.save_config(self.config)
 
-    def get_csv_files(self, directory):
+    def get_csv_files(self, directory, sort_by='name', reverse=False):
         csv_files = []
+
         for root, _, files in os.walk(directory):
             for file in files:
-                if file.startswith("~$"):  # 一時ファイルを除外
+                if file.startswith("~$"):
                     continue
                 if file.lower().endswith((".csv", ".xlsx", ".xls")):
                     full_path = os.path.join(root, file)
                     relative_path = os.path.relpath(full_path, directory)
-                    csv_files.append(relative_path)
-        return csv_files
+                    mtime = os.path.getmtime(full_path)
+                    csv_files.append((relative_path, mtime))
+
+        if sort_by == 'name':
+            csv_files.sort(key=lambda x: natural_key(os.path.basename(x[0])), reverse=reverse)
+        elif sort_by == 'path':
+            csv_files.sort(key=lambda x: natural_key(x[0]), reverse=reverse)
+        elif sort_by == 'date':
+            csv_files.sort(key=lambda x: x[1], reverse=reverse)
+
+        return [path for path, _ in csv_files]
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
