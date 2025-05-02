@@ -4,11 +4,10 @@ import json
 import re
 import pandas as pd
 from PySide6.QtCore import Qt, QAbstractTableModel
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton, QLabel, QListWidget,
-    QHBoxLayout, QVBoxLayout, QFileDialog, QAbstractItemView, QTextEdit,
-    QTableView, QMessageBox
+    QHBoxLayout, QVBoxLayout, QFileDialog, QTableView
 )
 from MultiInputDialog import MultiInputDialog
 
@@ -28,6 +27,12 @@ def is_int(s):
 def natural_key(s):
     return [int(text) if text.isdigit() else text.lower()
             for text in re.split(r'(\d+)', s)]
+
+def parse_int_or_str(s):
+    try:
+        return int(s)
+    except ValueError:
+        return s
 
 class DataFrameModel(QAbstractTableModel):
     def __init__(self, df):
@@ -58,139 +63,60 @@ class DataFrameModel(QAbstractTableModel):
 class CSVExplorer(QWidget):
     def __init__(self):
         super().__init__()
-
         self.setWindowTitle("CSV ファイル一覧表示")
         self.resize(960, 800)
-
         # フォルダ選択
         hbox1 = QHBoxLayout()
         self.label = QLabel("フォルダを選択してください")
         self.button = QPushButton("フォルダ選択")
         self.button.setFixedWidth(100)  
-        self.button_xls = QPushButton("Excel設定")
+        self.button_xls = QPushButton("帳票設定")
         self.button_xls.setFixedWidth(80)  
         hbox1.addWidget(self.button)
         hbox1.addWidget(self.label)
         hbox1.addWidget(self.button_xls)
-
         # ファイルリスト＆プレビュー
         hbox2 = QHBoxLayout()
         self.list_widget = QListWidget()
-        self.list_widget.setSelectionMode(QAbstractItemView.MultiSelection)
         self.list_widget.setFixedWidth(360)  
         self.font = QFont()
         self.font.setPointSize(8)
-        table_view = QTableView()
-        table_view.setFont(self.font)
-        table_view.verticalHeader().setDefaultSectionSize(20)
-        table_view.horizontalHeader().setDefaultSectionSize(60)
-        table_view.horizontalHeader().setStretchLastSection(False)
-        self.preview = QVBoxLayout()
-        self.preview.addWidget(table_view)
+        self.preview = QTableView()
+        self.preview.setFont(self.font)
+        self.preview.verticalHeader().setDefaultSectionSize(20)
+        self.preview.horizontalHeader().setDefaultSectionSize(60)
+        self.preview.horizontalHeader().setStretchLastSection(False)
         # 必要なら、自動サイズ調整を無効化して固定サイズにしたい場合は下記を追加
         hbox2.addWidget(self.list_widget)
-        hbox2.addLayout(self.preview)
-
-        # ツール
-        hbox3 = QHBoxLayout()
-        self.reset_btn = QPushButton("リセット")
-        # self.concat_btn = QPushButton("結合")
-        self.sum_btn = QPushButton("合計")
-        hbox3.addWidget(self.reset_btn)
-        # hbox3.addWidget(self.concat_btn)
-        hbox3.addWidget(self.sum_btn)
-
+        hbox2.addWidget(self.preview)
         # レイアウト
         layout = QVBoxLayout()
         layout.addLayout(hbox1)
         layout.addLayout(hbox2)
         self.setLayout(layout)
-        layout.addLayout(hbox3)
-
         # シグナル接続
         self.button.clicked.connect(self.select_directory)
-        self.button_xls.clicked.connect(self.set_xls_config)
-        self.reset_btn.clicked.connect(self.reset_data)
-        # self.concat_btn.clicked.connect(self.concat_data)
-        self.sum_btn.clicked.connect(self.sum_data)
+        self.button_xls.clicked.connect(self.set_project)
         self.list_widget.itemClicked.connect(self.update_preview)
-
-        # 設定ファイル読み込み
-        self.config = {"header": 0}
+        # 設定の読み込み
+        self.config = {}    # 全体の設定
         self.load_config()
         current_dir = self.config.get("current_dir")
         if current_dir:
             self.change_directory(current_dir)
 
-    def reset_data(self):
-        self.list_widget.clearSelection()
-        self.clear_preview()
-        table_view = QTableView()
-        table_view.setFont(self.font)
-        table_view.verticalHeader().setDefaultSectionSize(20)
-        table_view.horizontalHeader().setDefaultSectionSize(60)
-        table_view.horizontalHeader().setStretchLastSection(False)
-        self.preview.addWidget(table_view)
-
-    def sum_data(self):
-        current_dir = self.config.get("current_dir")
-        dfs = []
-        for item in self.list_widget.selectedItems():
-            path = os.path.join(current_dir, item.text())
-            df = self.load_dataframe(path)
-            dfs.append(df)
-
-        df = pd.concat(dfs, ignore_index=True)
-        cols = df["残高"].replace(",", "", regex=True).astype(int)
-        total = cols.sum()
-        QMessageBox.warning(self, "残高合計", f"{total:,.0f}")
-
-    def concat_data(self):
-        self.clear_preview()
-        current_dir = self.config.get("current_dir")
-        dfs = []
-        for item in self.list_widget.selectedItems():
-            path = os.path.join(current_dir, item.text())
-            df = self.load_dataframe(path)
-            dfs.append(df)
-            
-        self.df = pd.concat(dfs, ignore_index=True)
-        model = DataFrameModel(self.df.head(10))
-        table_view = QTableView()
-        table_view.setModel(model)
-        table_view.setFont(self.font)
-        table_view.verticalHeader().setDefaultSectionSize(20)
-        table_view.horizontalHeader().setDefaultSectionSize(60)
-        table_view.horizontalHeader().setStretchLastSection(False)
-        self.preview.addWidget(table_view)
-
-    def clear_preview(self):
-        while self.preview.count():
-            item = self.preview.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+    def current_dir(self):
+        return self.config.get("current_dir")
 
     def update_preview(self):
-        self.clear_preview()
-        current_dir = self.config.get("current_dir")
-        size = len(self.list_widget.selectedItems())
-        if size > 0:
-            for item in self.list_widget.selectedItems():
-                path = os.path.join(current_dir, item.text())
-                df = self.load_dataframe(path)
-                model = DataFrameModel(df.head().copy())
-                del df
-                table_view = QTableView()
-                table_view.setModel(model)
-                table_view.setFont(self.font)
-                table_view.verticalHeader().setDefaultSectionSize(20)
-                table_view.horizontalHeader().setDefaultSectionSize(60)
-                table_view.horizontalHeader().setStretchLastSection(False)
-                self.preview.addWidget(table_view)
-        else:
-            self.preview.addWidget(QTableView())
-
+        self.preview.setModel(QStandardItemModel()) # プレビュー画面をクリア
+        selected_items = self.list_widget.selectedItems()
+        if selected_items:
+            item = selected_items[0]
+            path = os.path.join(self.current_dir(), item.text())
+            df = self.load_dataframe(path)
+            model = DataFrameModel(df)
+            self.preview.setModel(model)
 
     def load_config(self):
         try:
@@ -203,35 +129,37 @@ class CSVExplorer(QWidget):
         with open("config.json", "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
             
+    def save_project(self, project):
+        path = os.path.join(self.current_dir(), "project.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(project, f, indent=2, ensure_ascii=False)
+
     def select_directory(self):
         initial_dir = self.config["current_dir"] or ""
         dir_path = QFileDialog.getExistingDirectory(self, "ディレクトリを選択", initial_dir)
-
         if dir_path:
             self.change_directory(dir_path)
 
-    def set_xls_config(self):
-        excel_config = self.config.get("excel_config") or {}
-        dialog = MultiInputDialog(title="EXEL読込み設定",
+    def set_project(self):
+        dialog = MultiInputDialog(title="帳票設定",
                                   labels=["対象シート", "ヘッダ行"],
-                                  values=[excel_config.get("sheet_name"),
-                                          str(excel_config.get("header") or 0)])
+                                  values=[str(self.project.get("sheet_name") or 0),
+                                          str(self.project.get("header") or 0)])
         if dialog.exec():
             values = dialog.get_data()
-            self.config["excel_config"] = {"sheet_name": values[0], "header": safe_int(values[1])}
-            self.save_config(self.config)
+            self.project = {"sheet_name": parse_int_or_str(values[0]),
+                            "header": safe_int(values[1])}
+            self.save_project(self.project)
 
     def load_dataframe(self, file_path):
         ext = os.path.splitext(file_path)[1].lower()
-
         if ext == ".csv":
             return pd.read_csv(file_path, encoding="utf-8-sig")
         elif ext in [".xls", ".xlsx"]:
-            excel_config = self.config.get("excel_config") or {}
-            sheet_name = excel_config.get("sheet_name") or 0
+            sheet_name = self.project.get("sheet_name") or 0
             if is_int(sheet_name):
                 sheet_name = int(sheet_name)
-            header = excel_config.get("header") or 0
+            header = self.project.get("header") or 0
             return pd.read_excel(file_path, sheet_name=sheet_name, header=header)
         else:
             raise ValueError(f"未対応のファイル形式です: {ext}")
@@ -239,15 +167,25 @@ class CSVExplorer(QWidget):
     def change_directory(self, dir_path):
         self.config["current_dir"] = dir_path
         self.label.setText(dir_path)
+        self.save_config(self.config)
+        self.load_project(dir_path)
+
+    def load_project(self, dir_path):
+        # ディレクトリの設定の読込み
+        self.project = {}
+        path = os.path.join(dir_path, "project.json")
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                self.project = json.load(f)
+        # CSV・EXCELファイル一覧の取得
         csv_files = self.get_csv_files(dir_path)
         self.list_widget.clear()
         for file_path in csv_files:
             self.list_widget.addItem(file_path)
-        self.save_config(self.config)
+
 
     def get_csv_files(self, directory, sort_by='name', reverse=False):
         csv_files = []
-
         for root, _, files in os.walk(directory):
             for file in files:
                 if file.startswith("~$"):
