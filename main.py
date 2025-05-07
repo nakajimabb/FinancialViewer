@@ -7,9 +7,10 @@ from PySide6.QtCore import Qt, QAbstractTableModel
 from PySide6.QtGui import QFont, QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton, QLabel, QListWidget,
-    QHBoxLayout, QVBoxLayout, QFileDialog, QTableView
+    QHBoxLayout, QVBoxLayout, QFileDialog, QTableView, QMessageBox
 )
 from MultiInputDialog import MultiInputDialog
+from FormatDialog import FormatDialog
 
 def safe_int(s):
     try:
@@ -65,18 +66,25 @@ class CSVExplorer(QWidget):
         super().__init__()
         self.setWindowTitle("CSV ファイル一覧表示")
         self.resize(960, 800)
+        self.df = None
         # フォルダ選択
         hbox1 = QHBoxLayout()
         self.label = QLabel("フォルダを選択してください")
         self.button = QPushButton("フォルダ選択")
-        self.button.setFixedWidth(100)  
-        self.button_xls = QPushButton("帳票設定")
-        self.button_xls.setFixedWidth(80)  
+        self.button.setFixedWidth(100)
         hbox1.addWidget(self.button)
         hbox1.addWidget(self.label)
-        hbox1.addWidget(self.button_xls)
-        # ファイルリスト＆プレビュー
+        # 帳票設定
         hbox2 = QHBoxLayout()
+        self.button_xls = QPushButton("ヘッダ設定")
+        self.button_xls.setFixedWidth(100)
+        self.button_add = QPushButton("帳票設定")
+        self.button_add.setFixedWidth(100)
+        hbox2.addWidget(self.button_xls)
+        hbox2.addWidget(self.button_add)
+        hbox2.addStretch()
+        # ファイルリスト＆プレビュー
+        hbox3 = QHBoxLayout()
         self.list_widget = QListWidget()
         self.list_widget.setFixedWidth(360)  
         self.font = QFont()
@@ -87,16 +95,19 @@ class CSVExplorer(QWidget):
         self.preview.horizontalHeader().setDefaultSectionSize(60)
         self.preview.horizontalHeader().setStretchLastSection(False)
         # 必要なら、自動サイズ調整を無効化して固定サイズにしたい場合は下記を追加
-        hbox2.addWidget(self.list_widget)
-        hbox2.addWidget(self.preview)
+        hbox3.addWidget(self.list_widget)
+        hbox3.addWidget(self.preview)
         # レイアウト
         layout = QVBoxLayout()
+        layout.setSpacing(5)
         layout.addLayout(hbox1)
         layout.addLayout(hbox2)
+        layout.addLayout(hbox3)
         self.setLayout(layout)
         # シグナル接続
         self.button.clicked.connect(self.select_directory)
         self.button_xls.clicked.connect(self.set_project)
+        self.button_add.clicked.connect(self.add_format)
         self.list_widget.itemClicked.connect(self.update_preview)
         # 設定の読み込み
         self.config = {}    # 全体の設定
@@ -114,8 +125,8 @@ class CSVExplorer(QWidget):
         if selected_items:
             item = selected_items[0]
             path = os.path.join(self.current_dir(), item.text())
-            df = self.load_dataframe(path)
-            model = DataFrameModel(df)
+            self.df = self.load_dataframe(path)
+            model = DataFrameModel(self.df)
             self.preview.setModel(model)
 
     def load_config(self):
@@ -141,15 +152,25 @@ class CSVExplorer(QWidget):
             self.change_directory(dir_path)
 
     def set_project(self):
-        dialog = MultiInputDialog(title="帳票設定",
+        dialog = MultiInputDialog(title="ヘッダ設定",
                                   labels=["対象シート", "ヘッダ行"],
                                   values=[str(self.project.get("sheet_name") or 0),
-                                          str(self.project.get("header") or 0)])
+                                        str(self.project.get("header") or 0)])
         if dialog.exec():
             values = dialog.get_data()
             self.project = {"sheet_name": parse_int_or_str(values[0]),
                             "header": safe_int(values[1])}
             self.save_project(self.project)
+
+    def add_format(self):
+        if self.df is not None and not self.df.empty:
+            dialog = FormatDialog(df=self.df, config=self.project)
+            if dialog.exec():
+                self.project = dialog.get_config()
+                self.save_project(self.project)
+        else:
+            QMessageBox.information(None, "", "シートを選択してください。")
+
 
     def load_dataframe(self, file_path):
         ext = os.path.splitext(file_path)[1].lower()

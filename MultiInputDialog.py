@@ -31,9 +31,14 @@ class MultiInputDialog(QDialog):
         # OKボタン
         self.ok_button = QPushButton("OK")
         self.ok_button.clicked.connect(self.accept)
-
+        # キャンセルボタン
+        self.cancel_button = QPushButton("キャンセル")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(self.ok_button)
+        button_layout.addWidget(self.cancel_button)
+        layout.addLayout(button_layout)
         # レイアウト
-        layout.addWidget(self.ok_button)
         self.setLayout(layout)
 
     def get_data(self):
