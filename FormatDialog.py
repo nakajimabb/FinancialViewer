@@ -1,11 +1,10 @@
 import copy
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QComboBox, QHBoxLayout,
+    QDialog, QVBoxLayout, QComboBox, QHBoxLayout, QLabel, QLineEdit,
     QGridLayout, QCheckBox, QPushButton, QGroupBox
 )
-
-def safe_get(lst, index):
-    return lst[index] if 0 <= index < len(lst) else None
+from tools import safe_get
 
 class FormatDialog(QDialog):
     def __init__(self, df, config):
@@ -15,13 +14,29 @@ class FormatDialog(QDialog):
 
         self.setWindowTitle("帳票設定")
         layout = QVBoxLayout()
+        layout.setContentsMargins(16, 8, 16, 8)
+        layout.setSpacing(20)
+
+        vbox = QVBoxLayout()
+        vbox.setSpacing(4)
+        self.label = QLabel("帳票名称")
+        font = QFont()
+        font.setPointSize(10)  # 小さく
+        self.label.setFont(font)
+        self.line_edit = QLineEdit()
+        self.line_edit.setText(self.config.get("name"))
+        self.line_edit.setPlaceholderText("名前を入力してください")
+        self.line_edit.setFixedWidth(200)
+        vbox.addWidget(self.label)
+        vbox.addWidget(self.line_edit)
+        layout.addLayout(vbox)
 
         # グループボックス
         group_box1 = QGroupBox("キー選択")
         group_layout = QHBoxLayout()
         # キー選択
         self.key_combos = []
-        keys = config["keys"] or []
+        keys = config.get("keys") or []
         for i in range(3):
             combo = QComboBox()
             combo.addItem("")
@@ -36,7 +51,7 @@ class FormatDialog(QDialog):
         group_box1.setLayout(group_layout)
         layout.addWidget(group_box1)
         # 表示項目選択
-        columns = config["columns"] or []
+        columns = config.get("columns") or []
         self.column_checkboxes = []
         group_box2 = QGroupBox("表示項目選択")
         grid = QGridLayout()
@@ -65,6 +80,7 @@ class FormatDialog(QDialog):
         self.setLayout(layout)
 
     def get_config(self):
+        self.config["name"] = self.line_edit.text()
         self.config["keys"] = []
         for combo in self.key_combos:
             key = combo.currentText()
