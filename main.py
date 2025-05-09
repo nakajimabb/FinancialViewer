@@ -198,12 +198,17 @@ class CSVExplorer(QWidget):
         numeric_cols = df.select_dtypes(include='number').columns.tolist()
         numeric_cols = [col for col in numeric_cols if col in ordered_columns and col not in keys]
         other_cols = [col for col in ordered_columns if col not in numeric_cols]
-        df = df.groupby(keys).agg(
-            {col: 'sum' for col in numeric_cols} |
-            {col: 'first' for col in other_cols}
-        )
-        df = self.set_df_int_types(df, dtypes_before)
-        return df[ordered_columns]
+        if len(keys) > 0:
+            df = df.groupby(keys).agg(
+                {col: 'sum' for col in numeric_cols} |
+                {col: 'first' for col in other_cols}
+            )
+            df = self.set_df_int_types(df, dtypes_before)
+            df = df[ordered_columns]
+        else:
+            df = df.sum(numeric_only=True).to_frame().T
+
+        return df
 
     def set_df_int_types(self, df, dtypes):
         for col in df.columns:
@@ -242,17 +247,20 @@ class CSVExplorer(QWidget):
                     errors.append(f"result: {str(e)}")
 
                 if len(errors) > 0:
+                    max_len = 256
                     file_name = "error.log"
                     path = os.path.join(current_dir, file_name)
-                    text = "\n".join(errors) + "\n"
-                    QMessageBox.information(None, "エラー情報", text + f"{file_name} 参照")
+                    text = "\n".join(errors)
+                    if len(text) > max_len:
+                        text = text[:max_len - 3] + "..."
+                    QMessageBox.information(None, "エラー情報", text + "\n" + f"{file_name} 参照")
                     self.save_errors(path, errors)
         else:
             QMessageBox.information(None, "", "帳票の種別を選択してください。")
 
     def save_errors(self, path, errors):
         with open(path, 'w', encoding='utf-8') as f:
-            text = "\n".join(errors) + "\n"
+            text = "\n".join(errors)
             f.write(text)
 
 
