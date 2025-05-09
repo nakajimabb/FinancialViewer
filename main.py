@@ -191,32 +191,55 @@ class CSVExplorer(QWidget):
         else:
             QMessageBox.information(None, "", "シートを選択してください。")
 
+    def df_agg(self, df, keys, columns):
+        dtypes_before = df.dtypes.to_dict()
+        ordered_columns = [col for col in df.columns if col in columns]
+        df = df[ordered_columns]
+        numeric_cols = df.select_dtypes(include='number').columns.tolist()
+        numeric_cols = [col for col in numeric_cols if col in ordered_columns and col not in keys]
+        other_cols = [col for col in ordered_columns if col not in numeric_cols]
+        df = df.groupby(keys).agg(
+            {col: 'sum' for col in numeric_cols} |
+            {col: 'first' for col in other_cols}
+        )
+        df = self.set_df_int_types(df, dtypes_before)
+        return df[ordered_columns]
+
+    def set_df_int_types(self, df, dtypes):
+        for col in df.columns:
+            if col in dtypes and pd.api.types.is_integer_dtype(dtypes[col]):
+                df[col] = df[col].astype('Int64')   # Int64: nullable integer(for IntCastingNaNError)
+        return df
+
+
     def output(self):
-        if "keys" in self.project and "columns" in self.project:
-            dir = self.current_dir()
-            files = self.get_csv_xls_files(dir)
-            format = self.current_format()
-            if format:
-                keys = format["keys"]
-                columns = format["columns"]
-                dfs = []
+        format = self.current_format()
+        if format:
+            current_dir = self.current_dir()
+            files = self.get_csv_xls_files(current_dir)
+            keys = format["keys"]
+            columns = list(set(keys + format["columns"]))
+            dfs = []
+            if len(files) > 0:
                 for file in files:
-                    path = os.path.join(dir, file)
-                    df = self.load_dataframe(path)
-                    dfs.append(df)
-                    
+                    try:
+                        path = os.path.join(current_dir, file)
+                        df = self.load_dataframe(path)
+                        df = self.df_agg(df, keys, columns)
+                        dfs.append(df)
+                    except Exception as e:
+                        print(e)
+
+                dtypes_before = dfs[0].dtypes.to_dict()
                 merged_df = pd.concat(dfs, ignore_index=True)
-                numeric_cols = merged_df.select_dtypes(include='number').columns.tolist()
-                numeric_cols = [col for col in numeric_cols if col in columns]
-                string_cols = merged_df.select_dtypes(include='object').columns.tolist()
-                string_cols = [col for col in string_cols if col in columns]
-                self.df = merged_df.groupby(keys).agg(
-                    {col: 'sum' for col in numeric_cols} |
-                    {col: 'first' for col in string_cols}
-                )
+                merged_df = self.set_df_int_types(merged_df, dtypes_before)
+                self.df = self.df_agg(merged_df, keys, columns)
                 model = DataFrameModel(self.df)
                 self.preview.setModel(model)
-    
+        else:
+            QMessageBox.information(None, "", "帳票の種別を選択してください。")
+
+
     def save_result(self):
         format = self.current_format()
         if format and format.get("name"):
