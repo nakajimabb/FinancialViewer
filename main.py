@@ -213,6 +213,7 @@ class CSVExplorer(QWidget):
 
 
     def output(self):
+        errors = []
         format = self.current_format()
         if format:
             current_dir = self.current_dir()
@@ -228,16 +229,31 @@ class CSVExplorer(QWidget):
                         df = self.df_agg(df, keys, columns)
                         dfs.append(df)
                     except Exception as e:
-                        print(e)
+                        errors.append(f"{file}: {str(e)}")
 
-                dtypes_before = dfs[0].dtypes.to_dict()
-                merged_df = pd.concat(dfs, ignore_index=True)
-                merged_df = self.set_df_int_types(merged_df, dtypes_before)
-                self.df = self.df_agg(merged_df, keys, columns)
-                model = DataFrameModel(self.df)
-                self.preview.setModel(model)
+                try:
+                    dtypes_before = dfs[0].dtypes.to_dict()
+                    merged_df = pd.concat(dfs, ignore_index=True)
+                    merged_df = self.set_df_int_types(merged_df, dtypes_before)
+                    self.df = self.df_agg(merged_df, keys, columns)
+                    model = DataFrameModel(self.df)
+                    self.preview.setModel(model)
+                except Exception as e:
+                    errors.append(f"result: {str(e)}")
+
+                if len(errors) > 0:
+                    file_name = "error.log"
+                    path = os.path.join(current_dir, file_name)
+                    text = "\n".join(errors) + "\n"
+                    QMessageBox.information(None, "エラー情報", text + f"{file_name} 参照")
+                    self.save_errors(path, errors)
         else:
             QMessageBox.information(None, "", "帳票の種別を選択してください。")
+
+    def save_errors(self, path, errors):
+        with open(path, 'w', encoding='utf-8') as f:
+            text = "\n".join(errors) + "\n"
+            f.write(text)
 
 
     def save_result(self):
